@@ -1,30 +1,27 @@
 # Aurora Global Database CDK Project
 
-A comprehensive CDK TypeScript project demonstrating Aurora Global Database across two AWS regions (us-east-1 and us-west-2) with AWS Lambda functions performing CRUD operations using different endpoint types, including automated failover capabilities.
+A comprehensive CDK TypeScript project demonstrating Aurora Global Database infrastructure deployment across two AWS regions (us-east-1 and us-west-2).
 
 ## Overview
 
 This project showcases:
 
 - **Aurora Global Database** spanning us-east-1 (primary) and us-west-2 (secondary)
-- **Python Lambda functions** for CRUD operations against different endpoint types:
-  - Global writer endpoint
-  - Replica endpoint with write-forwarding enabled
-- **Automated failover Lambda functions** that detect region role and trigger failover
-- **VPC peering** for cross-region connectivity
-- **Concurrent CRUD operations during failover** to measure reliability
+- **Aurora Serverless v2** clusters in both regions
+- **Cross-region replication** with write-forwarding enabled on the secondary region
+- **Encrypted secrets** using KMS keys in both regions
+- **VPC infrastructure** with public and private subnets in both regions
 
 ## Architecture
 
-- **Primary Region (us-east-1)**: Aurora Serverless v2 cluster, Lambda functions, VPC
-- **Secondary Region (us-west-2)**: Aurora replica cluster, Lambda functions, VPC
-- **Cross-Region**: VPC peering for Lambda access to Aurora endpoints
+- **Primary Region (us-east-1)**: Aurora Serverless v2 cluster, VPC, KMS key, Secrets Manager secret
+- **Secondary Region (us-west-2)**: Aurora replica cluster with write-forwarding, VPC, KMS key, replicated secret
+- **Cross-Region**: Global database cluster managing replication between regions
 
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials
 - Node.js 18+ and npm
-- Python 3.11+
 - AWS CDK CLI installed (`npm install -g aws-cdk`)
 - CDK bootstrapped in both regions:
   ```bash
@@ -40,10 +37,11 @@ aurora-global-lambda/
 │   └── aurora-global.ts              # CDK app entry point
 ├── lib/
 │   ├── stacks/                       # CDK stacks
-│   ├── constructs/                   # Reusable constructs
-│   └── lambda/                       # Python Lambda functions
-│       ├── crud-operations/          # CRUD Lambda handlers
-│       └── failover/                 # Failover Lambda handlers
+│   │   ├── kms-stack.ts             # KMS key stack
+│   │   ├── primary-stack.ts         # Primary region stack
+│   │   └── secondary-stack.ts       # Secondary region stack
+│   └── utils/                       # Utility functions
+│       └── vpc-cidr.ts              # VPC CIDR helper
 ├── docs/                             # Documentation
 ├── package.json
 ├── tsconfig.json
@@ -56,11 +54,6 @@ aurora-global-lambda/
 2. Install dependencies:
    ```bash
    npm install
-   ```
-3. Install Python dependencies (for Lambda functions):
-   ```bash
-   cd lib/lambda/crud-operations && pip install -r requirements.txt -t .
-   cd ../failover && pip install -r requirements.txt -t .
    ```
 
 ## Deployment
@@ -112,72 +105,54 @@ If you prefer to deploy manually, ensure you follow the order above. **Do not us
 
 ## Usage
 
-### Invoking CRUD Lambda Functions
+After deployment, you can connect to the Aurora Global Database using the cluster endpoints:
 
-**Global Endpoint Lambda** (from primary region):
-```bash
-aws lambda invoke \
-  --function-name <GlobalEndpointLambdaArn> \
-  --payload '{"trigger_failover": false, "operations": 10, "operation_type": "mixed"}' \
-  response.json
-```
+### Primary Region Endpoints
 
-**Write-Forwarding Lambda** (from replica region):
-```bash
-aws lambda invoke \
-  --function-name <WriteForwardingLambdaArn> \
-  --payload '{"trigger_failover": false, "operations": 10}' \
-  response.json
-```
+- **Cluster Endpoint**: Available via stack output `ClusterEndpoint`
+- **Reader Endpoint**: Available via the cluster's reader endpoint
+- **Global Writer Endpoint**: Use the global cluster identifier to connect to the global writer endpoint
 
-### Triggering Failover
+### Secondary Region Endpoints
 
-**Via API Gateway**:
-```bash
-curl -X POST https://<FailoverApiUrl>/failover \
-  -H "Content-Type: application/json" \
-  -d '{"failover_type": "planned"}'
-```
+- **Cluster Endpoint**: Available via stack output `ClusterIdentifier`
+- **Write-Forwarding**: Enabled, allowing writes to be forwarded to the primary region
 
-**Via Lambda directly**:
-```bash
-aws lambda invoke \
-  --function-name <FailoverLambdaArn> \
-  --payload '{"failover_type": "planned"}' \
-  response.json
-```
+### Connecting to the Database
 
-### Testing Failover with Concurrent CRUD Operations
-
-To test failover reliability with concurrent operations:
+Use the secret ARN from the stack outputs to retrieve database credentials:
 
 ```bash
-# Trigger CRUD operations with failover
-aws lambda invoke \
-  --function-name <GlobalEndpointLambdaArn> \
-  --payload '{"trigger_failover": true, "operations": 50, "operation_type": "mixed"}' \
-  response.json
+# Get database credentials
+aws secretsmanager get-secret-value \
+  --secret-id <SecretArn> \
+  --query SecretString \
+  --output text | jq -r '.password'
 ```
 
-This will:
-1. Asynchronously trigger failover Lambda
-2. Immediately begin CRUD operations
-3. Continue operations throughout failover
-4. Publish metrics to CloudWatch
+Connect using PostgreSQL client:
+
+```bash
+# Connect to primary cluster
+psql -h <ClusterEndpoint> -U postgres -d auroraglobaldb
+
+# Connect to global writer endpoint
+psql -h aurora-global-cluster.cluster-xxxxx.us-east-1.rds.amazonaws.com -U postgres -d auroraglobaldb
+```
 
 ## Monitoring
 
-View CloudWatch metrics:
-- `AuroraGlobalDB/Failover/OperationsDuringFailover`
-- `AuroraGlobalDB/Failover/SuccessRate`
-- `AuroraGlobalDB/Failover/Latency`
-- `AuroraGlobalDB/Failover/RetryCount`
+Monitor your Aurora Global Database using:
+- **CloudWatch Logs**: PostgreSQL logs exported to CloudWatch
+- **RDS Performance Insights**: Available for Aurora Serverless v2
+- **CloudWatch Metrics**: Standard RDS metrics for both clusters
 
 ## Documentation
 
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System architecture details
 - [FAILOVER_SCENARIOS.md](docs/FAILOVER_SCENARIOS.md) - Failover scenario documentation
 - [ENDPOINT_TYPES.md](docs/ENDPOINT_TYPES.md) - Endpoint type comparison
+- [FAILOVER_ARCHITECTURE.md](docs/FAILOVER_ARCHITECTURE.md) - Failover architecture details
 
 ## Cleanup
 
@@ -216,4 +191,3 @@ cdk destroy AuroraGlobalKmsStackPrimary    # us-east-1
 ## License
 
 Apache-2.0
-# cdk-aurora-global
