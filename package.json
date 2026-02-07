@@ -1,0 +1,33 @@
+{
+  "name": "aurora-global-lambda",
+  "version": "1.0.0",
+  "description": "CDK project demonstrating Aurora Global Database",
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "synth": "cdk synth"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "aurora",
+    "global-database"
+  ],
+  "author": "",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "typescript": "~5.3.0",
+    "aws-cdk": "^2.100.0",
+    "ts-node": "^10.9.2"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.3.0",
+    "source-map-support": "^0.5.21"
+  }
+}
